@@ -1,16 +1,22 @@
 from .extensions import db
 
+# Modelo de Usuario
 class UserModel(db.Model):
-    __tablename__ = 'users'
+    __tablename__ = 'users' 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(20), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(60), nullable=False)
+    
+    # Relación con Reservas
+    reservations = db.relationship('ReservationModel', backref='user', lazy=True)
+    
     def __repr__(self):
         return f"User('{self.username}', '{self.email}')"
 
-#Model de Evento
+# Modelo de Evento
 class EventModel(db.Model):
+    __tablename__ = 'events' 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     date = db.Column(db.DateTime, nullable=False)
@@ -21,12 +27,13 @@ class EventModel(db.Model):
     
     def __repr__(self):
         return f"Event (name = {self.name}, date = {self.date}, capacity = {self.max_capacity})"
-    
-#Model de Reserva
+
+# Modelo de Reserva
 class ReservationModel(db.Model):
+    __tablename__ = 'reservations' 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user_model.id'), nullable=False)
-    event_id = db.Column(db.Integer, db.ForeignKey('event_model.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  
+    event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=False) 
     reservation_date = db.Column(db.DateTime, nullable=False)
     discount = db.Column(db.Float, nullable=True)
 
