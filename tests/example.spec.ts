@@ -138,7 +138,7 @@ console.log('Clic en el botón de búsqueda.');
   await page.pause();
   
   // Localizar el botón "Agregar al carrito" usando el atributo data-pre-process-add-to-cart
-  const addToCartButton = page.locator('button[data-pre-process-add-to-cart="795426e8361bc783623c345f235eb64c"]');
+  const addToCartButton = page.locator('button[data-pre-process-add-to-cart="5f4418db3f13b3a762523796e1643f2f"]'); //Ojo aquí, porque el componente del carrito puede cambiar, entonces si pasa eso modificarlo
 
   // Verificar que el botón sea visible
   await expect(addToCartButton).toBeVisible({ timeout: 10000 });
