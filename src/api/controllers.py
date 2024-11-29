@@ -1,3 +1,4 @@
+from datetime import datetime
 from flask import Flask, Response, json
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
@@ -22,6 +23,28 @@ def check_event_capacity(event_id):
     reservations_count = ReservationModel.query.filter_by(event_id=event_id).count()
     if reservations_count >= event.max_capacity:
         abort(400, message="El evento ha alcanzado su capacidad máxima.")
+
+def check_reservation_exists(user_id, event_id):
+    if ReservationModel.query.filter_by(user_id=user_id, event_id=event_id).first():
+        abort(409, message="El usuario ya tiene una reserva para este evento.")
+
+def validate_password(password):
+    if not password:
+        abort(400, message="La contraseña es requerida.")
+    if len(password) < 8:
+        abort(400, message="La contraseña debe tener al menos 8 caracteres.")
+
+def check_event_negative_capacity(max_capacity):
+    if max_capacity <= 0:
+        abort(400, message="La capacidad del evento debe ser un número positivo.")
+
+def is_valid_date(date_str):
+    date_format = "%Y-%m-%dT%H:%M:%S"
+    try:
+        datetime.strptime(date_str, date_format)
+        return True
+    except ValueError:
+        return False
 
 # Parsers para validación
 user_args = reqparse.RequestParser()
@@ -50,7 +73,7 @@ user_fields = {
 event_fields = {
     "id": fields.Integer,
     "name": fields.String,
-    "date": fields.String,
+    "date": fields.DateTime,
     "max_capacity": fields.Integer
 }
 
@@ -69,6 +92,7 @@ class Users(Resource):
         args = user_args.parse_args()
         validate_email_format(args["email"])
         check_user_exists(args["username"], args["email"])
+        validate_password(args["password"])
         user = UserModel(username=args["username"], email=args["email"], password=args["password"])
         db.session.add(user)
         db.session.commit()
@@ -81,11 +105,35 @@ class Users(Resource):
             abort(404, message="No users found")
         return users
 
+class User(Resource):
+    @marshal_with(user_fields)
+    def get(self, user_id):
+        user = UserModel.query.filter_by(id=user_id).first()
+        if not user:
+            abort(404, message="User not found")
+        return user
+
+    def delete(self, user_id):
+        user = UserModel.query.filter_by(id=user_id).first()
+        if not user:
+            abort(404, message="User not found")
+        db.session.delete(user)
+        db.session.commit()
+        return Response(status=204)
+
 class Events(Resource):
     @marshal_with(event_fields)
     def post(self):
         args = event_args.parse_args()
-        event = EventModel(name=args["name"], date=args["date"], max_capacity=args["max_capacity"])
+        check_event_negative_capacity(args["max_capacity"])
+        if not is_valid_date(args["date"]):
+            abort(400, message="La fecha proporcionada no es válida")
+
+        event_date = datetime.strptime(args["date"], "%Y-%m-%dT%H:%M:%S")
+        existing_event = EventModel.query.filter_by(name=args["name"], date=event_date).first()
+        if existing_event:
+            abort(400, message="Ya existe un evento con el mismo nombre y fecha")
+        event = EventModel(name=args["name"], date=datetime.strptime(args["date"], "%Y-%m-%dT%H:%M:%S"), max_capacity=args["max_capacity"])
         db.session.add(event)
         db.session.commit()
         return event, 201
@@ -96,6 +144,22 @@ class Events(Resource):
         if not events:
             abort(404, message="No events found")
         return events
+
+class Event(Resource):
+    @marshal_with(event_fields)
+    def get(self, event_id):
+        event = EventModel.query.filter_by(id=event_id).first()
+        if not event:
+            abort(404, message="Event not found")
+        return event
+
+    def delete(self, event_id):
+        event = EventModel.query.get(event_id)
+        if not event:
+            abort(404, message="Event not found")
+        db.session.delete(event)
+        db.session.commit()
+        return '', 204 
 
 class Reservations(Resource):
     @marshal_with(reservation_fields)
@@ -118,3 +182,19 @@ class Reservations(Resource):
         if not reservations:
             abort(404, message="No reservations found")
         return reservations
+
+class Reservation(Resource):
+    @marshal_with(reservation_fields)
+    def get(self, reservation_id):
+        reservation = ReservationModel.query.filter_by(id=reservation_id).first()
+        if not reservation:
+            abort(404, message="Reservation not found")
+        return reservation
+
+    def delete(self, reservation_id):
+        reservation = ReservationModel.query.get(reservation_id)
+        if not reservation:
+            abort(404, message="Reservation not found")
+        db.session.delete(reservation)
+        db.session.commit()
+        return '', 204
