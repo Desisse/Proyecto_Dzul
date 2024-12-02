@@ -63,6 +63,13 @@ reservation_args.add_argument("event_id", type=int, help="El ID del evento es re
 reservation_args.add_argument("reservation_date", type=str, help="La fecha de reservacion es requerida.", required=True)
 reservation_args.add_argument("discount", type=float, help="Descuento opcional.", required=False)
 
+payment_args = reqparse.RequestParser()
+payment_args.add_argument("user_id", type=int, help="El ID del usuario es requerido.", required=True)
+payment_args.add_argument("reservation_id", type=int, help="El ID de la reserva es requerido.", required=True)
+payment_args.add_argument("amount", type=float, help="El monto del pago es requerido.", required=True)
+payment_args.add_argument("payment_date", type=str, help="La fecha del pago es requerida.", required=True)
+payment_args.add_argument("payment_method", type=str, help="El método de pago es requerido.", required=True)
+
 user_fields = {
     "id": fields.Integer,
     "username": fields.String,
@@ -81,8 +88,17 @@ reservation_fields = {
     "id": fields.Integer,
     "user_id": fields.Integer,
     "event_id": fields.Integer,
-    "reservation_date": fields.String,
+    "reservation_date": fields.DateTime,
     "discount": fields.Float
+}
+
+payment_fields = {
+    "id": fields.Integer,
+    "user_id": fields.Integer,
+    "reservation_id": fields.Integer,
+    "amount": fields.Float,
+    "payment_date": fields.DateTime,
+    "payment_method": fields.String
 }
 
 # Recursos de API
@@ -165,11 +181,30 @@ class Reservations(Resource):
     @marshal_with(reservation_fields)
     def post(self):
         args = reservation_args.parse_args()
+        try:
+            reservation_date = datetime.fromisoformat(args["reservation_date"])
+        except ValueError:
+            abort(400, message="Invalid date format. Use (YYYY-MM-DDTHH:MM:SS).")
+        
+        user = db.session.get(UserModel, args["user_id"])
+        if not user:
+            abort(404, message="Usuario no encontrado.")
+        
+        event = db.session.get(EventModel, args["event_id"])
+        if not event:
+            abort(404, message="Evento no encontrado.")
+        
+        existing_reservation = ReservationModel.query.filter_by(
+        user_id=args["user_id"], event_id=args["event_id"]
+        ).first()
+        if existing_reservation:
+            abort(400, message="El usuario ya tiene una reserva para este evento.")
+
         check_event_capacity(args["event_id"])
         reservation = ReservationModel(
             user_id=args["user_id"],
             event_id=args["event_id"],
-            reservation_date=args["reservation_date"],
+            reservation_date=reservation_date,
             discount=args.get("discount")
         )
         db.session.add(reservation)
@@ -196,5 +231,56 @@ class Reservation(Resource):
         if not reservation:
             abort(404, message="Reservation not found")
         db.session.delete(reservation)
+        db.session.commit()
+        return '', 204
+
+class Payments(Resource):
+    @marshal_with(payment_fields)
+    def post(self):
+        args = payment_args.parse_args()
+        try:
+            payment_date = datetime.fromisoformat(args["payment_date"])
+        except ValueError:
+            abort(400, message="Invalid date format. Use (YYYY-MM-DDTHH:MM:SS).")
+
+        user = db.session.get(UserModel, args["user_id"])
+        if not user:
+            abort(404, message="Usuario no encontrado.")
+
+        reservation = db.session.get(ReservationModel, args["reservation_id"])
+        if not reservation:
+            abort(404, message="Reserva no encontrada.")
+
+        payment = PaymentModel(
+            user_id=args["user_id"],
+            reservation_id=args["reservation_id"],
+            amount=args["amount"],
+            payment_date=payment_date,
+            payment_method=args["payment_method"]
+        )
+        db.session.add(payment)
+        db.session.commit()
+        return payment, 201
+
+    @marshal_with(payment_fields)
+    def get(self):
+        payments = PaymentModel.query.all()
+        if not payments:
+            abort(404, message="No payments found")
+        return payments
+
+class Payment(Resource):
+    @marshal_with(payment_fields)
+    def get(self, payment_id):
+        payment = PaymentModel.query.filter_by(id=payment_id).first()
+        if not payment:
+            abort(404, message="Payment not found")
+        return payment
+
+    def delete(self, payment_id):
+        payment = PaymentModel.query.get(payment_id)
+        if not payment:
+            abort(404, message="Payment not found")
+        db.session.delete(payment)
         db.session.commit()
         return '', 204
